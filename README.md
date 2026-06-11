@@ -31,36 +31,72 @@ Large LLM weights can exhaust primary C-drive partitions, causing Windows slowdo
 This installer includes an automatic **Storage Shield** protocol:
 * **Secondary Drive Detection**: The script auto-detects if a secondary `D:` drive is present.
 * **Force Sandboxing**: If a `D:` drive is detected, the entire setup—including binaries, models, and cache folder structures—is initialized at `D:\llama-cpp`.
-* **Zero C-Drive Footprint**: Heavy Hugging Face cache repositories (`HF_HUB_CACHE` and `HF_HOME`) are directed to the sandbox partition via process-level environment variables, ensuring your system C: drive remains **100% clean and protected**.
+* **Zero C-Drive Footprint**: Heavy Hugging Face cache repositories (`HF_HUB_CACHE` and `HF_HOME`) are directed to the sandbox partition via process-level environment variables inside the server launcher, ensuring your system C: drive remains **100% clean and protected**.
 
 ---
 
-## 🛠️ Dead-Simple 3-Step Setup
+## 🛠️ Step-by-Step Setup Guide
 
 Get up and running in less than 3 minutes. No need to install git, build-tools, or compile binaries manually.
 
 ### Step 1: Open PowerShell as Administrator
-Right-click your Windows Start button and select **Terminal (Admin)** or **PowerShell (Admin)**.
+1. Press the **Windows Key** on your keyboard.
+2. Type `PowerShell`.
+3. Right-click on **Windows PowerShell** (or **Terminal**) and select **Run as Administrator**.
+4. Click **Yes** on the Windows User Account Control (UAC) prompt.
 
 ### Step 2: Run the Setup Wizard
-Copy, paste, and run the following command to download and run the installer:
+Copy the command block below, paste it into your administrator PowerShell window, and press **Enter**:
 
 ```powershell
 Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 -bor [System.Net.SecurityProtocolType]::Tls13; iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/RorriMaesu/one-click-local-vibe-coding/main/setup.ps1'))
 ```
 
-### Step 3: Start Vibe Coding
-* Double-click the **Run Llama Server** shortcut created on your Desktop.
-* The server will automatically spin up on **`http://127.0.0.1:8080`**.
-* *First-time launch note*: The server will download the Gemma 4 12B IT model weights directly from Hugging Face and load them straight into GPU memory.
+#### What the installer does behind the scenes:
+1. **Scans drives**: Checks if a `D:` drive is present. If yes, it creates `D:\llama-cpp`. Otherwise, it falls back to `C:\llama-cpp`.
+2. **Scans GPU capabilities**: Checks for NVIDIA GPUs via `nvidia-smi` and checks if the CUDA Toolkit is installed.
+   * *If CUDA is present:* It detects the version (v12.x or v13.x) and chooses the corresponding build.
+   * *If CUDA is missing but an NVIDIA GPU is found:* It downloads the main CUDA binaries along with the CUDA runtime DLL package (`cudart`). This allows GPU acceleration to run smoothly without installing the full CUDA Toolkit.
+   * *If no GPU is found:* It prompts you to download CPU-optimized binaries.
+3. **Downloads llama.cpp**: Queries the GitHub API for the latest pre-built Windows releases from `ggml-org/llama.cpp` and extracts the binaries into `[SelectedDrive]:\llama-cpp\bin\`.
+4. **Writes the Launcher**: Generates `run-server.bat` in the root of the sandbox.
+5. **Registers Desktop Shortcut**: Creates a `Run Llama Server` shortcut directly on your Windows Desktop.
+
+### Step 3: Boot the Server
+1. Go to your desktop and double-click the new shortcut **Run Llama Server**.
+2. A command prompt window will open. On the first launch, the server will detect that the model weights are missing and will automatically download the **Gemma 4 12B IT GGUF (Q4_K_M)** model directly from Hugging Face.
+3. Once the download completes, it will load the model into GPU memory and run the server. You'll know it's ready when you see output indicating it is listening on:
+   ```
+   http://127.0.0.1:8080
+   ```
+
+---
+
+## 🔌 Connecting to Cline (VS Code Extension)
+
+To connect the popular **Cline** AI coding assistant to your local server, follow these exact settings:
+
+1. **Open Cline Settings**:
+   * Open VS Code.
+   * Click on the **Cline** icon in the left-hand activity bar.
+   * Click the **Gear icon (⚙️)** in the top right of the Cline panel to open settings.
+2. **Configure API Provider**:
+   * Change the **API Provider** dropdown to **`OpenAI Compatible`**.
+3. **Configure Connection details**:
+   * **Base URL**: Set this to **`http://127.0.0.1:8080/v1`** (make sure to include the `/v1` suffix).
+   * **API Key**: Enter a dummy key (e.g., `nokey`). Llama.cpp doesn't require a key, but Cline needs a placeholder to enable saving.
+   * **Model ID**: Enter **`unsloth/gemma-4-12B-it-GGUF:Q4_K_M`**.
+4. **Set Context Limits**:
+   * **Model Context Window (tokens)**: Set this to **`32768`** (matching the `-c 32768` server parameter).
+5. Click **Done** or **Save** at the bottom of the Cline settings.
 
 ---
 
 ## 💻 VS Code Automation Scaffold
 
-For seamless developer experience, drop the following portable task configuration into your project folder. It will allow you to start the server directly inside VS Code.
+For a completely automated developer experience, you can add a boot task to your project workspace. This allows the local server to spin up automatically whenever you open your coding project.
 
-Create a folder named `.vscode` in your workspace, and save this as `tasks.json`:
+Create a folder named `.vscode` in the root of your workspace, and save the following file as `tasks.json`:
 
 ```json
 {
@@ -95,6 +131,11 @@ Many modern reasoning models output lengthy `<|think|>` blocks before writing co
 
 To maximize generation speed, paste the following prompt block into your agent configuration (e.g., Cline's system prompt instructions) to strip away reasoning tokens and force rapid file generation:
 
+### How to configure custom instructions in Cline:
+1. Open Cline settings (⚙️).
+2. Scroll down to **Custom Instructions**.
+3. Paste the following block inside:
+
 ```markdown
 === local-vibe-coding-mode ===
 You are running on a high-throughput, local inference server powered by llama.cpp.
@@ -118,6 +159,9 @@ If you want to use a different model, simply edit the generated `run-server.bat`
 ```batch
 llama-server.exe -hf Qwen/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M --port 8080
 ```
+
+#### 3. How do I verify my C: drive is protected?
+Once the server is running and downloading the model weights, open Windows File Explorer and check the properties of `D:\llama-cpp\hf_cache` (or `C:\llama-cpp\hf_cache` if you don't have a secondary drive). You will see the cache folder size grow to several gigabytes as the model downloads, confirming that your system folder `%USERPROFILE%\.cache` is completely untouched.
 
 ---
 
